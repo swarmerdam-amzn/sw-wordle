@@ -1,0 +1,24 @@
+{
+    "TableName": "wordle-game-data",
+    "KeySchema": [
+        {
+            "AttributeName": "userId",
+            "KeyType": "HASH"
+        },
+        {
+            "AttributeName": "gameId",
+            "KeyType": "RANGE"
+        }
+    ],
+    "AttributeDefinitions": [
+        {
+            "AttributeName": "userId",
+            "AttributeType": "S"
+        },
+        {
+            "AttributeName": "gameId",
+            "AttributeType": "N"
+        }
+    ],
+    "BillingMode": "PAY_PER_REQUEST"
+}

@@ -1,31 +1,41 @@
-// backend/server.js
-// Add at the top of the file:
-const PORT = process.env.PORT || 3001;
-const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:3000';
-
-// Update the cors configuration:
-app.use(cors({
-  origin: CORS_ORIGIN
-}));
-
-// backend/server.js
 const express = require('express');
 const cors = require('cors');
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, PutCommand, GetCommand } = require('@aws-sdk/lib-dynamodb');
+const { config } = require('dotenv');
+
+// Load environment variables
+config();
 
 const app = express();
 const port = process.env.PORT || 3001;
 
-app.use(cors());
+// CORS configuration
+const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:3000';
+app.use(cors({ origin: CORS_ORIGIN }));
 app.use(express.json());
 
-const ddbClient = new DynamoDBClient({ region: 'us-east-1' });
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ error: 'Something went wrong!' });
+});
+
+// Initialize AWS clients with proper configuration
+const ddbClient = new DynamoDBClient({
+  region: process.env.AWS_REGION || 'us-east-1'
+});
 const ddbDocClient = DynamoDBDocumentClient.from(ddbClient);
 
 // Daily word management
 let currentWord = 'WORLD'; // This will be replaced with proper word selection logic
 let lastReset = new Date().setHours(0, 0, 0, 0);
+
+// Endpoint to get game state
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'healthy' });
+});
 
 // Endpoint to get game state
 app.get('/api/game', async (req, res) => {

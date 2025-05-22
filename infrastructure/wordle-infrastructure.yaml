@@ -1,0 +1,136 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Wordle Clone Infrastructure Stack'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, prod]
+    Description: Environment name
+
+Resources:
+  # S3 Bucket for deployments
+  DeploymentBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub wordle-deployment-${Environment}
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # DynamoDB Table for game data
+  GameDataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub wordle-game-data-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: gameId
+          AttributeType: N
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: gameId
+          KeyType: RANGE
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+
+  # IAM Role for Elastic Beanstalk
+  EBInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub wordle-eb-role-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: EBInstancePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:*
+                Resource: !GetAtt GameDataTable.Arn
+              - Effect: Allow
+                Action:
+                  - s3:*
+                Resource:
+                  - !GetAtt DeploymentBucket.Arn
+                  - !Sub '${DeploymentBucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - logs:*
+                Resource: arn:aws:logs:*:*:*
+
+  # Elastic Beanstalk Application
+  EBApplication:
+    Type: AWS::ElasticBeanstalk::Application
+    Properties:
+      ApplicationName: !Sub wordle-app-${Environment}
+      Description: Wordle clone application
+
+  # Elastic Beanstalk Environment
+  EBEnvironment:
+    Type: AWS::ElasticBeanstalk::Environment
+    Properties:
+      ApplicationName: !Ref EBApplication
+      EnvironmentName: !Sub wordle-env-${Environment}
+      SolutionStackName: 64bit Amazon Linux 2 v3.5.1 running Node.js 18
+      OptionSettings:
+        - Namespace: aws:elasticbeanstalk:environment
+          OptionName: EnvironmentType
+          Value: LoadBalanced
+        - Namespace: aws:elasticbeanstalk:environment
+          OptionName: LoadBalancerType
+          Value: application
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: NODE_ENV
+          Value: !Ref Environment
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: AWS_REGION
+          Value: !Ref AWS::Region
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: TABLE_NAME
+          Value: !Ref GameDataTable
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: CORS_ORIGIN
+          Value: !If
+            - IsProd
+            - !Sub 'https://wordle.${Environment}.example.com'
+            - 'http://localhost:3000'
+
+  # Security Group for Load Balancer
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP access to load balancer
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  # Security Group for EC2 instances
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP access to instances
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+
+Conditions:
+  IsProd: !Equals [!Ref Environment, prod]
